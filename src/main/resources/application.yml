@@ -1,0 +1,100 @@
+server:
+  port: 8086
+spring:
+  application:
+    name: eureka-gateway
+  redis:
+    host: 111.7.172.183
+    port: 18081
+    database: 0
+    password: 123456
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lowerCaseServiceId: true
+#      globalcors:
+#        corsConfigurations:
+#          '[/**]':
+#            allowedOrigins: "*"
+#            allowedMethods:
+#            - GET
+#            - PUT
+#            - DELETE
+#            - POST
+      routes:
+      - id: test
+        uri: lb://eureka-provider
+        predicates:
+        - Path=/fast
+        filters:
+        - PrefixPath=/abc
+        - name: RateCheck
+          args:
+            key-resolver: uriKeyResolver #bean名称
+            redis-rate-limiter.replenishRate: 1
+            redis-rate-limiter.burstCapacity: 1
+#      # 路由标识（id：标识，具有唯一性）   简单尝试
+      - id: route_simple
+        # 目标服务地址（uri：地址，请求转发后的地址）
+        uri: lb://eureka-provider
+        # 路由条件（predicates：断言，匹配 HTTP 请求内容）
+        predicates:
+        ## 转发地址格式为 uri/archive
+          - Path=/getAllUser
+#        filters:
+#        ## 截取路径位数
+#        - StripPrefix=1
+#        filters:
+#        ## 前置/mypath
+#        - PrefixPath=/mypath
+        filters:
+        - name: RequestRateLimiter
+          args:
+            key-resolver: '#{@uriKeyResolver}'
+            #允许用户每秒处理多少个请求
+            redis-rate-limiter.replenishRate: 1
+            #用户在一秒钟内允许执行的最大请求数
+            redis-rate-limiter.burstCapacity: 1
+        ## 熔断name表示HystrixCommand代码的名称，fallbackUri表示触发断路由后的跳转请求url
+        - name: Hystrix
+          args:
+            name: fallbackcmd
+            ### fallback 时调用的方法 http://localhost:8000/fallback
+            fallbackUri: forward:/fallback
+#设置断路由的超时时间，毫秒
+hystrix:
+  command:
+    default:
+      execution:
+        isolation:
+          thread: timeoutInMilliseconds= 30000
+eureka:
+  client:
+    service-url:
+      #设置服务注册中心地址
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    instance-id: ${spring.cloud.client.ip-address}:${server.port}
+    prefer-ip-address: true 
+  lease-expiration-duration-in-seconds: 10
+  lease-renewal-interval-in-seconds: 5
+# 暴露端点
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          - shutdown
+          - info
+          - health
+  endpoint:
+    health:
+      show-details: always
+    shutdown:
+      enabled: true
+logging:
+  level:
+    # log 级别
+    org.springframework.cloud.gateway: debug
